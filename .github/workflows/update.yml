@@ -59,7 +59,7 @@ jobs:
           fi
           python scripts/build_site_data.py
           # weekly heartbeat keeps the scheduled workflow active through the off-season
-          date -u +%G-W%V > data/last_checked.txt
+          mkdir -p data && date -u +%G-W%V > data/last_checked.txt
           commit "Data update $(date -u +%Y-%m-%d)"
 
   deploy:

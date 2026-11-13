@@ -208,7 +208,7 @@ def main():
             if y >= 2022 and code in el_names:
                 past_by_season[y].append((code, r))
 
-    meta = {"updated": dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"), "current": cur, "seasons": {}}
+    meta = {"updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "current": cur, "seasons": {}}
     arsenal_matches, league_players, league_teams = [], {}, {}
     arsenal = {}  # espn athlete id -> player record
 
