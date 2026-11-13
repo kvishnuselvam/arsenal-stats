@@ -1,72 +1,39 @@
-"""Probe data sources from a GitHub runner and print compact summaries."""
+"""Probe ESPN public soccer API from a GitHub runner."""
 import json
 import requests
 
 UA = {"User-Agent": "arsenal-stats personal tracker (+https://github.com/kvishnuselvam/arsenal-stats)"}
-US = "https://understat.com"
+E = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
 
-def show(label, obj, n=1500):
-    print(f"=== {label}\n{json.dumps(obj)[:n]}\n")
+def get(url):
+    r = requests.get(url, headers=UA, timeout=30)
+    print(r.status_code, url, len(r.text))
+    return r.json() if r.ok else None
 
 
-def main():
-    s = requests.Session()
-    s.headers.update(UA)
-    r = s.get(US + "/robots.txt", timeout=30)
-    print("robots", r.status_code, r.text[:400])
-    r = s.get(US, timeout=30)
-    print("home", r.status_code, "cookies", list(s.cookies.keys()))
-    H = {"X-Requested-With": "XMLHttpRequest"}
-    for season in [2020, 2026]:
-        r = s.get(f"{US}/getLeagueData/EPL/{season}", headers=H, timeout=30)
-        print("league", season, r.status_code, r.headers.get("content-type"), len(r.text))
-        if r.ok and r.text.startswith("{"):
-            j = r.json()
-            print(" keys", list(j.keys()))
-            show(f"teams sample {season}", list(j["teams"].values())[0], 900)
-            show(f"players sample {season}", j["players"][0], 900)
-            show(f"dates sample {season}", j["dates"][0], 600)
-            print(" n players", len(j["players"]), "n dates", len(j["dates"]))
-        else:
-            print(r.text[:300])
-    r = s.get(f"{US}/getTeamData/Arsenal/2020", headers=H, timeout=30)
-    print("team", r.status_code, len(r.text))
-    mid = None
-    if r.ok and r.text.startswith("{"):
-        j = r.json()
-        print(" keys", list(j.keys()))
-        show("team statistics keys", {k: list(v.keys()) for k, v in j.get("statistics", {}).items()}, 1200)
-        mid = [d for d in j["dates"] if d.get("isResult")][0]["id"]
-    if mid:
-        r = s.get(f"{US}/getMatchData/{mid}", headers=H, timeout=30)
-        print("match", r.status_code, len(r.text))
-        if r.ok:
-            j = r.json()
-            print(" keys", list(j.keys()))
-            show("roster player", list(j["rosters"]["h"].values())[0], 900)
-            show("shot", j["shots"]["h"][0], 900)
-    r = s.get(f"{US}/getPlayerData/7322", headers=H, timeout=30)
-    print("player", r.status_code, len(r.text))
-    if r.ok and r.text.startswith("{"):
-        j = r.json()
-        print(" keys", list(j.keys()))
-        show("player groups", {k: (list(v.keys()) if isinstance(v, dict) else len(v)) for k, v in j.items()}, 900)
-
-    F = "https://fantasy.premierleague.com/api"
-    r = requests.get(F + "/bootstrap-static/", headers=UA, timeout=30)
-    print("fpl bootstrap", r.status_code, len(r.text))
-    if r.ok:
-        j = r.json()
-        el = [e for e in j["elements"] if e["web_name"] == "Saka"][0]
-        print(" element keys", sorted(el.keys()))
-        r = requests.get(f"{F}/element-summary/{el['id']}/", headers=UA, timeout=30)
-        print("fpl summary", r.status_code)
-        if r.ok:
-            k = r.json()
-            show("fpl history row", k["history"][0], 1500)
-            show("fpl history_past", k["history_past"][-3:], 800)
-
-
-if __name__ == "__main__":
-    main()
+for lg in ["eng.1", "uefa.champions"]:
+    for season in [2020, 2023, 2026]:
+        j = get(f"{E}/{lg}/teams/359/schedule?season={season}")
+        if not j:
+            continue
+        evs = j.get("events", [])
+        done = [e for e in evs if e["competitions"][0]["status"]["type"].get("completed")]
+        print(f"  {lg} {season}: events={len(evs)} completed={len(done)}", evs[0]["date"] if evs else "")
+        if done and season in (2020, 2026) and lg == "eng.1" or (done and lg == "uefa.champions" and season == 2023):
+            s = get(f"{E}/{lg}/summary?event={done[0]['id']}")
+            if s:
+                print("  summary keys", list(s.keys()))
+                bs = s.get("boxscore", {}).get("teams", [])
+                if bs:
+                    print("  team stats:", [(x.get("name"), x.get("displayValue")) for x in bs[0].get("statistics", [])])
+                ro = s.get("rosters", [])
+                if ro:
+                    p = ro[0]["roster"][0]
+                    print("  roster player keys", list(p.keys()))
+                    print("  player stats:", [(x.get("name"), x.get("value")) for x in p.get("stats", [])])
+                    print("  n players", len(ro[0]["roster"]))
+j = get(f"{E}/eng.1/teams/359/roster?season=2026")
+if j:
+    a = j.get("athletes", [])
+    print(" roster n", len(a), json.dumps(a[0])[:1200] if a else "")
