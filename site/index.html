@@ -3,17 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#06060a">
 <title>Arsenal Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="kitfill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c26"/><stop offset="1" stop-color="#0b0b10"/>
+    </linearGradient>
+  </defs>
+</svg>
 <header class="top">
-  <div class="brand"><span class="crest" aria-hidden="true"></span><a href="#/team">Arsenal Stats</a></div>
+  <a class="brand" href="#/team" aria-label="Arsenal Stats home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 29 9v14L16 30 3 23V9z" fill="none" stroke="#ff2d4b" stroke-width="2"/><path d="M16 9l6 4-2 7h-8l-2-7z" fill="#ff2d4b"/></svg>
+    <b>Arsenal<span>//</span>Stats</b>
+  </a>
   <nav>
     <a href="#/team" data-nav="team">Team</a>
     <a href="#/players" data-nav="players">Players</a>
     <a href="#/matches" data-nav="matches">Matches</a>
-    <a href="#/compare" data-nav="compare">Compare</a>
     <a href="#/about" data-nav="about">About</a>
   </nav>
 </header>
@@ -30,7 +43,7 @@
 </div>
 <main id="app"><p class="muted">Loading…</p></main>
 <div id="tip" class="tip" role="tooltip" hidden></div>
-<footer>Data: ESPN public match data and the official Fantasy Premier League API (xG, xA, defensive actions). Personal, non-commercial project.</footer>
+<footer>Data: ESPN public match data · Official Fantasy Premier League API (xG, xA, defensive actions) · Unofficial personal project</footer>
 <script src="app.js"></script>
 </body>
 </html>
