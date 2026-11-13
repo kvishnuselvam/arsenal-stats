@@ -1,0 +1,80 @@
+name: update-and-deploy
+
+on:
+  schedule:
+    # 06:30 and 23:30 UTC = 12:00 and 05:00 IST; catches weekend PL games and midweek UCL nights
+    - cron: "30 6 * * *"
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "update = current season only; backfill = every season from 2020-21"
+        default: update
+        type: choice
+        options: [update, backfill, rebuild]
+  push:
+    branches: [main]
+    paths: ["site/**", "scripts/build_site_data.py"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Configure git
+        run: |
+          git config user.name "arsenal-stats-bot"
+          git config user.email "arsenal-stats-bot@users.noreply.github.com"
+      - name: Fetch data
+        env:
+          MODE: ${{ github.event_name == 'push' && 'rebuild' || inputs.mode || 'update' }}
+        run: |
+          set -e
+          commit() { git add -A data site/data; git diff --cached --quiet || { git commit -qm "$1"; git pull -q --rebase; git push -q; }; }
+          if [ "$MODE" = "backfill" ]; then
+            for comp in PL UCL; do
+              for y in $(seq 2020 $(date +%Y)); do
+                python scripts/fetch_espn.py --comp $comp --season $y || true
+                commit "Backfill $comp $y"
+              done
+            done
+            python scripts/fetch_fpl.py --force
+          elif [ "$MODE" = "update" ]; then
+            python scripts/fetch_espn.py --current
+            python scripts/fetch_fpl.py
+          fi
+          python scripts/build_site_data.py
+          # weekly heartbeat keeps the scheduled workflow active through the off-season
+          date -u +%G-W%V > data/last_checked.txt
+          commit "Data update $(date -u +%Y-%m-%d)"
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
