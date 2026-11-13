@@ -1,3 +1,36 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>Arsenal Stats</title></head>
-<body><p>Arsenal Stats: data loading, site coming shortly.</p></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arsenal Stats</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="crest" aria-hidden="true"></span><a href="#/team">Arsenal Stats</a></div>
+  <nav>
+    <a href="#/team" data-nav="team">Team</a>
+    <a href="#/players" data-nav="players">Players</a>
+    <a href="#/matches" data-nav="matches">Matches</a>
+    <a href="#/compare" data-nav="compare">Compare</a>
+    <a href="#/about" data-nav="about">About</a>
+  </nav>
+</header>
+<div class="filters" id="filters">
+  <label>Competition
+    <select id="f-comp">
+      <option value="PL">Premier League</option>
+      <option value="UCL">Champions League</option>
+      <option value="ALL">PL + UCL</option>
+    </select>
+  </label>
+  <label>Season <select id="f-season"></select></label>
+  <span class="updated" id="updated"></span>
+</div>
+<main id="app"><p class="muted">Loading…</p></main>
+<div id="tip" class="tip" role="tooltip" hidden></div>
+<footer>Data: ESPN public match data and the official Fantasy Premier League API (xG, xA, defensive actions). Personal, non-commercial project.</footer>
+<script src="app.js"></script>
+</body>
+</html>

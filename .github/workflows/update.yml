@@ -44,7 +44,8 @@ jobs:
           MODE: ${{ github.event_name == 'push' && 'rebuild' || inputs.mode || 'update' }}
         run: |
           set -e
-          commit() { git add -A data site/data; git diff --cached --quiet || { git commit -qm "$1"; git pull -q --rebase; git push -q; }; }
+          mkdir -p data site/data
+          commit() { git add -A data site; git diff --cached --quiet || { git commit -qm "$1"; git pull -q --rebase; git push -q; }; }
           if [ "$MODE" = "backfill" ]; then
             for comp in PL UCL; do
               for y in $(seq 2020 $(date +%Y)); do
