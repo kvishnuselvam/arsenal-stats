@@ -31,6 +31,8 @@ jobs:
     timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -45,7 +47,7 @@ jobs:
         run: |
           set -e
           mkdir -p data site/data
-          commit() { git add -A data site; git diff --cached --quiet || { git commit -qm "$1"; git pull -q --rebase; git push -q; }; }
+          commit() { git add -A data site; git diff --cached --quiet || { git commit -qm "$1"; git pull -q --rebase -X theirs; git push -q; }; }
           if [ "$MODE" = "backfill" ]; then
             for comp in PL UCL; do
               for y in $(seq 2020 $(date +%Y)); do
