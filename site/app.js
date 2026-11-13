@@ -168,6 +168,55 @@ function statVal(a, s, per90) {
 }
 const decs = (s, per90) => (s.base ? 0 : per90 ? 2 : s.k === "xg" || s.k === "xa" ? 2 : 0);
 
+
+// ---------- motion ----------
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let OBS = null;
+function countUp(el) {
+  if (el.dataset.done) return;
+  el.dataset.done = 1;
+  const to = +el.dataset.count, d = +el.dataset.dec || 0, suf = el.dataset.suf || "";
+  if (REDUCED || !isFinite(to)) return;
+  const t0 = performance.now(), dur = 900;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = (to * e).toFixed(d) + suf;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  el.textContent = (0).toFixed(d) + suf;
+  requestAnimationFrame(step);
+}
+// render a view, then reveal its panels with staggered motion as they scroll into view
+function paint(html) {
+  const app = $("#app");
+  app.innerHTML = html;
+  const quiet = S.quiet || REDUCED;
+  S.quiet = false;
+  if (OBS) OBS.disconnect();
+  setTimeout(() => {
+    const items = app.querySelectorAll(".hero, .hud, h2.sec, .ctl, .form");
+    if (quiet) { app.querySelectorAll("[data-count]").forEach((el) => { el.dataset.done = 1; }); return; }
+    items.forEach((el) => el.classList.add("rv"));
+    app.querySelectorAll(".hero").forEach((h) => { if (!h.querySelector(".sheen")) h.insertAdjacentHTML("afterbegin", '<i class="sheen" aria-hidden="true"></i>'); });
+    const scan = $("#scan");
+    if (scan) { scan.classList.remove("go"); void scan.offsetWidth; scan.classList.add("go"); }
+    OBS = new IntersectionObserver((entries) => {
+      let n = 0;
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        const el = en.target;
+        OBS.unobserve(el);
+        el.style.setProperty("--d", Math.min(n++ * 55, 500) + "ms");
+        el.classList.add("in");
+        setTimeout(() => el.querySelectorAll("[data-count]").forEach(countUp), Math.min(n * 55, 500));
+        // hand back to normal styles once the entrance has played, so hover effects are not delayed
+        setTimeout(() => { el.classList.remove("rv", "in"); el.style.removeProperty("--d"); }, 2600);
+      });
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.08 });
+    items.forEach((el) => OBS.observe(el));
+  }, 0);
+}
+
 // ---------- tooltip ----------
 const tip = $("#tip");
 document.addEventListener("mouseover", (e) => {
@@ -213,8 +262,8 @@ function matchBars(ms, key, label) {
   ms.forEach((m, i) => {
     const x = pad + i * slot + (slot - bw) / 2;
     const [f, a] = vals[i];
-    if (f != null) s += `<path d="${vbar(x, mid - 1, bw, f * scale, 1)}" fill="var(--s1)" filter="url(#glow)"/>`;
-    if (a != null) s += `<path d="${vbar(x, mid + 1, bw, a * scale, -1)}" fill="var(--s2)"/>`;
+    if (f != null) s += `<path class="gu" style="--i:${i}" d="${vbar(x, mid - 1, bw, f * scale, 1)}" fill="var(--s1)" filter="url(#glow)"/>`;
+    if (a != null) s += `<path class="gd" style="--i:${i}" d="${vbar(x, mid + 1, bw, a * scale, -1)}" fill="var(--s2)"/>`;
     const t = `<b>${esc(dateStr(m.date))} · ${m.ha === "home" ? "vs" : "at"} ${esc(m.opp.name)}</b>${m.comp} · ${m.gf}-${m.ga} (${m.res})<br>Arsenal ${esc(label)}: ${f ?? "n/a"}<br>Opponent: ${a ?? "n/a"}`;
     s += `<rect x="${pad + i * slot}" y="${top}" width="${slot}" height="${H - top - 24}" fill="transparent" data-tip="${esc(t)}"/>`;
   });
@@ -239,7 +288,7 @@ function rankBars(rows, opts) {
     s += `<text x="4" y="${y + 17}" class="val" fill="var(--muted)">${String(r.rank).padStart(2, "0")}</text>`;
     s += `<g transform="translate(30 ${y + 1})"><path d="M10 0 20 4 20 15 10 22 0 15 0 4Z" fill="${t.c}"/><text x="10" y="14" text-anchor="middle" style="font:700 6.5px var(--display);fill:${t.c2}">${esc(t.abbr)}</text></g>`;
     s += `<text class="lab" x="58" y="${y + 17}" ${ars ? 'style="fill:var(--neon)"' : ""}>${esc(W < 520 ? t.abbr : t.short)}</text>`;
-    s += `<path d="${hbarPath(lw, y + 5, w, rh - 14)}" fill="${ars ? "var(--s1)" : "var(--other)"}" ${ars ? 'filter="url(#glow2)"' : ""}/>`;
+    s += `<path class="gx" style="--i:${i}" d="${hbarPath(lw, y + 5, w, rh - 14)}" fill="${ars ? "var(--s1)" : "var(--other)"}" ${ars ? 'filter="url(#glow2)"' : ""}/>`;
     s += `<text class="val" x="${lw + w + 8}" y="${y + 17}">${r.v == null ? "n/a" : r.v.toFixed(opts.d ?? 2)}</text></g>`;
   });
   s += `<defs><filter id="glow2"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
@@ -294,13 +343,15 @@ function toggle(name, options, value) {
 function onToggle(name, fn) {
   document.querySelectorAll(`[data-toggle="${name}"] button`).forEach((b) => b.addEventListener("click", () => fn(b.dataset.v)));
 }
-const tiles = (list) => `<div class="tiles">${list.map(([v, l, x, hot]) => `<div class="hud pad tile ${hot ? "hot" : ""}"><div class="v">${v ?? "n/a"}</div><div class="l">${l}</div><div class="x">${x || ""}</div></div>`).join("")}</div>`;
+// numbers that count up when they scroll into view; the final value is rendered for no-animation cases
+const count = (v, d = 0, suf = "") => `<span data-count="${v}" data-dec="${d}" data-suf="${esc(suf)}">${Number(v).toFixed(d)}${esc(suf)}</span>`;
+const tiles = (list) => `<div class="tiles">${list.map(([v, l, x, hot]) => `<div class="hud pad tile ${hot ? "hot" : ""}"><div class="v">${typeof v === "number" ? count(v) : v ?? "n/a"}</div><div class="l">${l}</div><div class="x">${x || ""}</div></div>`).join("")}</div>`;
 
 // ---------- TEAM ----------
 async function viewTeam() {
   const ms = S.matches.filter(inScope);
   const t = aggTeam(ms);
-  if (!t.mp) { $("#app").innerHTML = `<section class="hero"><div class="kicker">${esc(scopeLabel())}</div><h1>Arsenal</h1><p class="sub">No matches in this selection yet.</p></section>`; return; }
+  if (!t.mp) { paint(`<section class="hero"><div class="kicker">${esc(scopeLabel())}</div><h1>Arsenal</h1><p class="sub">No matches in this selection yet.</p></section>`); return; }
   const pm = (side, k) => teamVal(t, { k, side });
   const single = S.comp !== "ALL" && S.season !== "ALL";
   let posTxt = "";
@@ -311,22 +362,25 @@ async function viewTeam() {
       if (ix >= 0) posTxt = ["1st", "2nd", "3rd"][ix] || ix + 1 + "th";
     }
   }
+  const cells = [[t.w, "Won"], [t.d, "Drawn"], [t.l, "Lost"]];
+  if (S.comp === "PL" && S.season !== "ALL") cells.push([t.pts, "Points"]);
+  cells.push([t.f.goals, "Scored"], [t.a.goals, "Conceded"]);
+  if (t.xgm) cells.push([t.f.xg, "xG for", 1], [t.a.xg, "xG against", 1]);
   let h = `<section class="hero"><div class="kicker">${esc(COMP_NAMES[S.comp])} // ${S.season === "ALL" ? "Since 2020-21" : esc(S.season)}</div><h1>Arsenal</h1>
-    <p class="sub">${t.mp} matches${posTxt ? ` · ${posTxt} in the table` : ""}</p>
-    <div class="bignums">
-      <div class="bignum"><div class="v">${t.w}<small>W</small> ${t.d}<small>D</small> ${t.l}<small>L</small></div><div class="l">Record</div></div>
-      ${S.comp === "PL" && S.season !== "ALL" ? `<div class="bignum"><div class="v">${t.pts}</div><div class="l">Points</div></div>` : ""}
-      <div class="bignum"><div class="v">${t.f.goals}<small>:</small>${t.a.goals}</div><div class="l">Goals for : against</div></div>
-      ${t.xgm ? `<div class="bignum"><div class="v">${t.f.xg.toFixed(1)}<small>:</small>${t.a.xg.toFixed(1)}</div><div class="l">xG for : against</div></div>` : ""}
-    </div></section>`;
-  h += tiles([
-    [pm("f", "sh")?.toFixed(1), "Shots per match", `${pm("a", "sh")?.toFixed(1)} conceded`],
-    [pm("f", "sot")?.toFixed(1), "On target per match", `${pm("a", "sot")?.toFixed(1)} conceded`],
-    [(t.f.goals / t.mp).toFixed(2), "Goals per match", `${(t.a.goals / t.mp).toFixed(2)} conceded`, 1],
-    [t.xgm ? (t.f.xg / t.xgm).toFixed(2) : "n/a", "xG per match", t.xgm ? `${(t.a.xg / t.xgm).toFixed(2)} against` : "current PL season only"],
-    [t.poss != null ? t.poss.toFixed(1) + "%" : "n/a", "Possession", "average"],
-    [t.f.pass ? ((100 * t.f.passacc) / t.f.pass).toFixed(1) + "%" : "n/a", "Pass accuracy", ""],
-  ]);
+    <p class="sub">${t.mp} matches${posTxt ? ` · <b>${posTxt}</b> in the table` : ""}</p>
+    <div class="scoreboard" style="--n:${cells.length}">${cells.map(([v, l, d]) => `<div class="sbc"><div class="v">${count(v, d ? 1 : 0)}</div><div class="l">${l}</div></div>`).join("")}</div></section>`;
+  const oppPass = t.a.pass ? (100 * (t.a.passacc || 0)) / t.a.pass : null;
+  h += `<div class="tiles6">` + [
+    ["Goals / match", t.f.goals / t.mp, t.a.goals / t.mp, 2, "", "conceded"],
+    ["xG / match", t.xgm ? t.f.xg / t.xgm : null, t.xgm ? t.a.xg / t.xgm : null, 2, "", "against", t.xgm ? "" : "Current PL season only"],
+    ["Shots / match", pm("f", "sh"), pm("a", "sh"), 1, "", "conceded"],
+    ["On target / match", pm("f", "sot"), pm("a", "sot"), 1, "", "conceded"],
+    ["Possession", t.poss, t.poss != null ? 100 - t.poss : null, 1, "%", "opponents"],
+    ["Pass accuracy", t.f.pass ? (100 * t.f.passacc) / t.f.pass : null, oppPass, 1, "%", "opponents"],
+  ].map(([l, f, a, d, suf, alab, na]) => `<div class="hud stat6"><div class="tl">${l}</div>
+      <div class="tv">${f == null ? `<b class="na">n/a</b>` : `<b>${count(f, d, suf)}</b>`}<span>${a == null ? (na || "") : `Opp. <em>${a.toFixed(d)}${suf}</em>`}</span></div>
+      <div class="split">${f == null || a == null ? "<i style='flex:1;background:var(--grid)'></i>" : `<i style="flex:${f}"></i><i style="flex:${a}"></i>`}</div>
+      <div class="tleg"><span>Arsenal</span><span>Opponents</span></div></div>`).join("") + `</div>`;
   // recent form
   const last = ms.slice(-10).reverse();
   h += sec("01", "Form") + `<div class="form">${last.map((m) => `<div class="hud fm" data-tip="${esc(`<b>${m.ha === "home" ? "vs" : "at"} ${esc(m.opp.name)}</b>${dateStr(m.date)} · ${m.comp}`)}">${badge(m.opp.id, m.opp.name)}<span class="res ${m.res}">${m.res}</span><span class="sc">${m.gf}-${m.ga}</span><span class="d">${new Date(m.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span></div>`).join("")}</div>`;
@@ -339,7 +393,7 @@ async function viewTeam() {
   if (S.season === "ALL") h += seasonTable(ms);
   else if (S.comp !== "ALL") h += await leagueSection(S.comp, S.season);
   else h += `<p class="note">Pick a single competition to compare Arsenal with other teams.</p>`;
-  $("#app").innerHTML = h;
+  paint(h);
   onToggle("mb", (v) => { store.set("mbKey", v); viewTeam(); });
   wireLeague();
 }
@@ -476,14 +530,14 @@ async function viewPlayers() {
     const e = r.e, on = pins.includes(e.key), link = e.tid === ARSENAL;
     return `<div class="hud pcard ${i === 0 ? "top1" : ""}"><span class="rk">#${String(i + 1).padStart(2, "0")}</span>${kit(e)}
       <div><a class="nm" ${link ? `href="#/player/${e.id}"` : ""}>${esc(e.name)}</a><div class="meta">${badge(e.tid, e.team, "sm")}<span>${esc(teamInfo(e.tid, e.team).short)}</span><span>· ${e.grp}</span></div></div>
-      <div class="val"><b>${r.v.toFixed(decs(stat, per90))}</b><span>${e.apps} apps<br>${e.min} min</span></div>
+      <div class="val"><b>${count(r.v, decs(stat, per90))}</b><span>${e.apps} apps<br>${e.min} min</span></div>
       <div class="meter"><i style="width:${Math.max(1, (100 * r.v) / max)}%"></i></div>
       <button class="pin ${on ? "on" : ""}" data-pin="${esc(e.key)}">${on ? "◆ Pinned" : "◇ Compare"}</button></div>`;
   }).join("")}</div>`;
   if (ranked.length > shown) h += `<div class="ctl" style="justify-content:center;margin-top:18px"><button class="btn" id="more">Show more (${ranked.length - shown} left)</button></div>`;
-  $("#app").innerHTML = h;
+  paint(h);
 
-  const savePins = (p) => { store.set(pinKey, JSON.stringify(p)); store.set(pinKey + "_set", "1"); viewPlayers(); };
+  const savePins = (p) => { store.set(pinKey, JSON.stringify(p)); store.set(pinKey + "_set", "1"); S.quiet = true; const y = scrollY; viewPlayers().then(() => scrollTo(0, y)); };
   document.querySelectorAll("[data-pin]").forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.pin;
     savePins(pins.includes(k) ? pins.filter((x) => x !== k) : [...pins, k].slice(-3));
@@ -494,13 +548,13 @@ async function viewPlayers() {
   onToggle("pos", (v) => { store.set("posF", v); viewPlayers(); });
   $("#stat-sel").addEventListener("change", (e) => { store.set("stat", e.target.value); viewPlayers(); });
   $("#minmin").addEventListener("change", (e) => { store.set("minMin", e.target.value); viewPlayers(); });
-  const more = $("#more"); if (more) more.addEventListener("click", () => { store.set("shown", shown + 24); viewPlayers(); });
+  const more = $("#more"); if (more) more.addEventListener("click", () => { store.set("shown", shown + 24); const y = scrollY; viewPlayers().then(() => scrollTo(0, y)); });
 }
 
 // ---------- PLAYER ----------
 async function viewPlayer(id) {
   const p = S.players.find((x) => x.id === id);
-  if (!p) { $("#app").innerHTML = `<p>Player not found. <a href="#/players">Back to players</a></p>`; return; }
+  if (!p) { paint(`<p>Player not found. <a href="#/players">Back to players</a></p>`); return; }
   const a = aggPlayer(p, inScope);
   const all = aggPlayer(p, () => true);
   const first = p.matches.length ? MATCH_BY_ID[p.matches[0].m] : null;
@@ -539,7 +593,7 @@ async function viewPlayer(id) {
         let pct = Math.round((100 * (less + eq / 2)) / pv.length);
         if (s.low) pct = 100 - pct;
         const on = Math.round(pct / 5);
-        h += `<div class="lab">${esc(s.l)}</div><div class="seg" data-tip="${esc(`<b>${esc(s.l)} per 90</b>${mv.toFixed(2)}; better than ${pct}% of ${pv.length} ${p.grp} with 450+ minutes`)}">${Array.from({ length: 20 }, (_, i) => `<i class="${i < on ? "on" : ""}"></i>`).join("")}</div><div class="n">${pct}<small>th · ${mv.toFixed(2)}</small></div>`;
+        h += `<div class="lab">${esc(s.l)}</div><div class="seg" data-tip="${esc(`<b>${esc(s.l)} per 90</b>${mv.toFixed(2)}; better than ${pct}% of ${pv.length} ${p.grp} with 450+ minutes`)}">${Array.from({ length: 20 }, (_, i) => `<i class="${i < on ? "on" : ""}" style="--k:${i}"></i>`).join("")}</div><div class="n">${pct}<small>th · ${mv.toFixed(2)}</small></div>`;
       }
       h += `</div><p class="note">Per 90 minutes; peers are players in the same position group with 450+ minutes. ${sc1.comp === "PL" ? "xG, xA and defensive stats use Fantasy Premier League data." : "Champions League data has no xG or defensive actions."}</p></div>`;
     }
@@ -573,7 +627,7 @@ async function viewPlayer(id) {
     { k: "sh", l: "Shots", f: (r) => r.sh || 0 }, { k: "sot", l: "On target", f: (r) => r.sot || 0 },
     { k: "xg", l: "xG", f: (r) => (r.f ? (r.xg || 0).toFixed(2) : NA) }, { k: "xa", l: "xA", f: (r) => (r.f ? (r.xa || 0).toFixed(2) : NA) },
   ], log, { sort: "date" });
-  $("#app").innerHTML = h;
+  paint(h);
   $("#cmp-me").addEventListener("click", () => {
     let pins = [];
     try { pins = JSON.parse(store.get("pins_ars") || "[]"); } catch (e) { pins = []; }
@@ -604,20 +658,20 @@ function viewMatches() {
       <div class="body grid2"><div class="tablewrap"><table><thead><tr><th class="l">Arsenal</th><th style="text-align:center">Team stats</th><th>${esc(m.opp.abbr || m.opp.name)}</th></tr></thead><tbody>${lines}</tbody></table></div>
       <div class="tablewrap"><table><thead><tr><th class="l">Player</th><th></th><th>Min</th><th>G</th><th>A</th><th>Sh</th><th>SoT</th><th>xG</th></tr></thead><tbody>${plines}</tbody></table></div></div></details>`;
   }).join("");
-  $("#app").innerHTML = h;
+  paint(h);
 }
 
 // ---------- ABOUT ----------
 function viewAbout() {
   const m = S.meta;
-  $("#app").innerHTML = `<section class="hero"><div class="kicker">System // Info</div><h1>About</h1><p class="sub">An unofficial, personal Arsenal stats tracker.</p></section>
+  paint(`<section class="hero"><div class="kicker">System // Info</div><h1>About</h1><p class="sub">An unofficial, personal Arsenal stats tracker.</p></section>
   <div class="hud pad"><p>Arsenal team and player stats for the Premier League (from 2020-21) and the Champions League (from 2023-24, the first season Arsenal were back in it in this period). Player stats count Arsenal appearances only; the whole-league boards include every player.</p>
   <p><b>Updates:</b> automatically twice a day (05:00 and 12:00 IST). Last update: ${esc(m.updated)}.</p>
   <p><b>Sources:</b></p><ul>
   <li>ESPN public match data: results, team stats (shots, possession, passing, crosses, tackles, interceptions, clearances, corners, fouls), player stats (minutes, goals, assists, shots, shots on target, fouls, cards, saves), shirt numbers and club colours. Minutes come from substitution times and ignore stoppage time.</li>
   <li>Official Fantasy Premier League API: xG, xA, tackles, clearances/blocks/interceptions, recoveries and defensive contributions, Premier League only. Per match for the current season; xG and xA season totals from 2022-23 for players still in the league. Team xG is the sum of its players' xG.</li></ul>
   <p><b>Not available from free sources:</b> big chances, duels, dribbles, aerial duels, Champions League xG, and Premier League xG before 2022-23.</p>
-  <p><b>Design:</b> club badges are simple shapes in each club's colours with its short name, and player cards show shirt numbers; no club crests or player photos are used.</p></div>`;
+  <p><b>Design:</b> club badges are simple shapes in each club's colours with its short name, and player cards show shirt numbers; no club crests or player photos are used.</p></div>`);
 }
 
 // ---------- routing and filters ----------
@@ -664,7 +718,7 @@ async function init() {
   $("#f-comp").addEventListener("change", (e) => { S.comp = e.target.value; store.set("comp", S.comp); setSeasonOptions(); store.set("season", S.season); route(); });
   $("#f-season").addEventListener("change", (e) => { S.season = e.target.value; store.set("season", S.season); route(); });
   addEventListener("hashchange", route);
-  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(route, 250); });
+  let rt, lastW = innerWidth; addEventListener("resize", () => { if (Math.abs(innerWidth - lastW) < 40) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => { S.quiet = true; route(); }, 250); });
   route();
 }
 init();
