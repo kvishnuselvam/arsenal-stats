@@ -12,7 +12,8 @@ OUT = os.path.join(ROOT, "site", "data")
 
 P_MAP = {"totalGoals": "g", "goalAssists": "a", "totalShots": "sh", "shotsOnTarget": "sot",
          "foulsCommitted": "fc", "foulsSuffered": "fs", "yellowCards": "yc", "redCards": "rc",
-         "ownGoals": "og", "saves": "sv", "shotsFaced": "sf", "goalsConceded": "gc"}
+         "ownGoals": "og", "saves": "sv", "shotsFaced": "sf", "goalsConceded": "gc", "offsides": "off"}
+FROM_PLAYERS = ["totalShots", "shotsOnTarget", "foulsCommitted", "offsides", "saves", "yellowCards", "redCards"]
 T_MAP = {"totalShots": "sh", "shotsOnTarget": "sot", "totalPasses": "pass", "accuratePasses": "passacc",
          "totalCrosses": "cross", "accurateCrosses": "crossacc", "totalLongBalls": "lb",
          "accurateLongBalls": "lbacc", "totalTackles": "tkl", "effectiveTackles": "tklw",
@@ -46,6 +47,19 @@ def pos_group(abbr):
     if a.startswith(("F", "CF", "ST", "LW", "RW", "S")):
         return "FWD"
     return "MID"
+
+
+def team_stats(t, ev):
+    """ESPN team stats; when ESPN's team box score is empty, rebuild what we can from player lines."""
+    st = t["stats"]
+    if st.get("totalShots") or st.get("totalPasses") or st.get("possessionPct"):
+        return st
+    out = {}
+    for p in ev["players"]:
+        if p["tid"] == t["id"]:
+            for k in FROM_PLAYERS:
+                out[k] = out.get(k, 0) + (p["s"].get(k) or 0)
+    return out if any(out.values()) or ev["players"] else {}
 
 
 def load_espn():
@@ -224,11 +238,13 @@ def main():
             if len(ev["teams"]) != 2:
                 continue
             a_, b_ = ev["teams"]
+            a_ = dict(a_, stats=team_stats(a_, ev))
+            b_ = dict(b_, stats=team_stats(b_, ev))
             xg_avail = ev["id"] in team_xg
             for t, o in ((a_, b_), (b_, a_)):
                 rec = teams.setdefault(t["id"], {"id": t["id"], "name": t["name"], "abbr": t["abbr"],
                                                  "mp": 0, "w": 0, "d": 0, "l": 0, "f": {}, "a": {},
-                                                 "poss": 0.0, "xgm": 0})
+                                                 "poss": 0.0, "possn": 0, "xgm": 0, "n": {}})
                 rec["mp"] += 1
                 rec["w" if t["score"] > o["score"] else "d" if t["score"] == o["score"] else "l"] += 1
                 add(rec["f"], "goals", t["score"])
@@ -236,7 +252,11 @@ def main():
                 for k, s in T_MAP.items():
                     add(rec["f"], s, t["stats"].get(k))
                     add(rec["a"], s, o["stats"].get(k))
-                rec["poss"] += t["stats"].get("possessionPct") or 0
+                    if k in t["stats"] and k in o["stats"]:
+                        rec["n"][s] = rec["n"].get(s, 0) + 1
+                if t["stats"].get("possessionPct"):
+                    rec["poss"] += t["stats"]["possessionPct"]
+                    rec["possn"] += 1
                 if xg_avail:
                     rec["xgm"] += 1
                     add(rec["f"], "xg", team_xg[ev["id"]].get(t["id"], 0.0))
@@ -250,7 +270,7 @@ def main():
                      "res": "W" if us["score"] > them["score"] else "D" if us["score"] == them["score"] else "L",
                      "f": {T_MAP[k]: v for k, v in us["stats"].items() if k in T_MAP},
                      "a": {T_MAP[k]: v for k, v in them["stats"].items() if k in T_MAP},
-                     "poss": us["stats"].get("possessionPct")}
+                     "poss": us["stats"].get("possessionPct") or None}
                 if xg_avail:
                     m["f"]["xg"] = round(team_xg[ev["id"]].get(us["id"], 0.0), 2)
                     m["a"]["xg"] = round(team_xg[ev["id"]].get(them["id"], 0.0), 2)
@@ -320,7 +340,8 @@ def main():
 
         tlist = []
         for t in teams.values():
-            t["poss"] = round(t["poss"] / t["mp"], 1) if t["mp"] else None
+            t["poss"] = round(t["poss"] / t["possn"], 1) if t["possn"] else None
+            del t["possn"]
             t["f"] = {k: rnd(v) for k, v in t["f"].items()}
             t["a"] = {k: rnd(v) for k, v in t["a"].items()}
             if not t["xgm"]:

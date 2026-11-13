@@ -16,6 +16,7 @@ const PSTATS = [
   { k: "yc", l: "Yellow cards" }, { k: "rc", l: "Red cards" },
   { k: "sv", l: "Saves", gk: 1 }, { k: "gc", l: "Goals conceded", gk: 1 },
 ];
+const decs = (s, per90) => (per90 ? 2 : s.k === "xg" || s.k === "xa" ? 2 : 0);
 const PCT_STATS = ["g", "a", "xg", "xa", "sh", "sot", "fs", "ptkl", "cbi", "rec"];
 const GK_PCT = ["sv", "gc"];
 const TSTATS = [
@@ -71,12 +72,13 @@ function singleScope() {
 
 // ---------- aggregation ----------
 function aggTeam(ms) {
-  const t = { mp: 0, w: 0, d: 0, l: 0, f: {}, a: {}, poss: 0, possN: 0, xgm: 0 };
+  const t = { mp: 0, w: 0, d: 0, l: 0, f: {}, a: {}, poss: 0, possN: 0, xgm: 0, n: {} };
   for (const m of ms) {
     t.mp++; t[m.res.toLowerCase()]++;
     for (const side of ["f", "a"]) {
       for (const [k, v] of Object.entries(m[side] || {})) t[side][k] = (t[side][k] || 0) + v;
     }
+    for (const k of Object.keys(m.f || {})) if (k !== "xg" && m.a && k in m.a) t.n[k] = (t.n[k] || 0) + 1;
     t.f.goals = (t.f.goals || 0) + m.gf; t.a.goals = (t.a.goals || 0) + m.ga;
     if (m.poss != null) { t.poss += m.poss; t.possN++; }
     if (m.f && m.f.xg != null) t.xgm++;
@@ -89,7 +91,7 @@ function aggTeam(ms) {
 function teamVal(t, def) {
   if (def.k === "poss") return t.poss ?? null;
   if (def.k === "passpct") return t.f.pass ? (100 * (t.f.passacc || 0)) / t.f.pass : null;
-  const n = def.k === "xg" ? t.xgm : t.mp;
+  const n = def.k === "xg" ? t.xgm : def.k === "goals" ? t.mp : (t.n && t.n[def.k] != null ? t.n[def.k] : t.mp);
   const v = t[def.side][def.k];
   if (!n || v == null) return null;
   return v / n;
@@ -169,9 +171,11 @@ function hbarPath(x0, y, w, h) {
   const r = Math.min(4, h / 2, w);
   return `M${x0},${y}H${x0 + w - r}Q${x0 + w},${y} ${x0 + w},${y + r}V${y + h - r}Q${x0 + w},${y + h} ${x0 + w - r},${y + h}H${x0}Z`;
 }
+const chartW = (max) => Math.max(340, Math.min(max, (document.querySelector("main").clientWidth || max) - 26));
+const nf = (v, d) => (v == null ? "n/a" : v.toFixed(Math.abs(v) >= 100 ? 0 : d));
 // mirrored match-by-match bars: Arsenal value up, opponent value down
 function matchBars(ms, key, label) {
-  const W = 1100, H = 230, top = 16, mid = 112, pad = 34;
+  const W = chartW(1100), H = 230, top = 16, mid = 112, pad = 34;
   const vals = ms.map((m) => [key === "goals" ? m.gf : m.f[key], key === "goals" ? m.ga : m.a[key]]);
   const max = Math.max(1, ...vals.flat().filter((v) => v != null));
   const scale = (mid - top - 6) / max;
@@ -192,7 +196,7 @@ function matchBars(ms, key, label) {
     s += `<rect x="${pad + i * slot}" y="${top}" width="${slot}" height="${H - top - 24}" fill="transparent" data-tip="${esc(t)}"/>`;
   });
   s += `<line x1="${pad}" x2="${W}" y1="${mid}" y2="${mid}" stroke="var(--axis)"/>`;
-  const step = Math.max(1, Math.ceil(n / 12));
+  const step = Math.max(1, Math.ceil(n / Math.max(3, Math.floor(W / 85))));
   ms.forEach((m, i) => {
     if (i % step) return;
     s += `<text x="${pad + i * slot + slot / 2}" y="${H - 4}" text-anchor="middle">${esc(new Date(m.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" }))}</text>`;
@@ -201,7 +205,7 @@ function matchBars(ms, key, label) {
 }
 // ranked horizontal bars, highlighted ids in series colours, others neutral
 function rankBars(rows, opts) {
-  const W = 760, rh = 22, lw = 170, vw = 60, H = rows.length * rh + 6;
+  const W = chartW(760), rh = 22, lw = W < 520 ? 128 : 170, vw = 60, H = rows.length * rh + 6;
   const max = Math.max(...rows.map((r) => r.v ?? 0), 0.0001);
   let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)} ranking">`;
   rows.forEach((r, i) => {
@@ -224,9 +228,9 @@ function compareBars(entities, metrics) {
     let s = `<div class="card"><div style="font-weight:600;font-size:13px;margin-bottom:6px">${esc(m.l)}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(m.l)}">`;
     entities.forEach((e, i) => {
       const v = vals[i], y = i * rh + 2, w = v == null ? 0 : (v / max) * (W - 70);
-      s += `<g data-tip="${esc(`<b>${esc(e.name)}</b>${esc(m.l)}: ${v == null ? "n/a" : v.toFixed(m.d ?? 2)}`)}"><rect x="0" y="${y - 1}" width="${W}" height="${rh}" fill="transparent"/>`;
+      s += `<g data-tip="${esc(`<b>${esc(e.name)}</b>${esc(m.l)}: ${nf(v, m.d ?? 2)}`)}"><rect x="0" y="${y - 1}" width="${W}" height="${rh}" fill="transparent"/>`;
       s += `<path d="${hbarPath(lw, y + 2, w, rh - 8)}" fill="${e.color}"/>`;
-      s += `<text class="val" x="${w + 6}" y="${y + 13}">${v == null ? "n/a" : v.toFixed(m.d ?? 2)}</text></g>`;
+      s += `<text class="val" x="${w + 6}" y="${y + 13}">${nf(v, m.d ?? 2)}</text></g>`;
     });
     return s + "</svg></div>";
   }).join("");
@@ -271,7 +275,7 @@ let MATCH_BY_ID = {};
 async function viewTeam() {
   const ms = S.matches.filter(inScope);
   const t = aggTeam(ms);
-  const pm = (side, k) => (t.mp ? (t[side][k] || 0) / t.mp : null);
+  const pm = (side, k) => teamVal(t, { k, side });
   let h = `<h1>Arsenal</h1><p class="sub">${esc(scopeLabel())} · ${t.mp} matches</p>`;
   if (!t.mp) { $("#app").innerHTML = h + `<p class="muted">No matches in this selection yet.</p>`; return; }
   const tiles = [
@@ -354,7 +358,7 @@ function viewPlayers() {
     { k: "grp", l: "Pos", left: 1, f: (a) => a.grp },
     { k: "apps", l: "Apps" }, { k: "starts", l: "Starts" }, { k: "min", l: "Min" },
     ...statCols.map((s) => ({ k: s.k, l: s.l, title: s.fpl ? `${s.l} (Fantasy Premier League data, PL only)` : s.l,
-      sv: (a) => statVal(a, s, per90), f: (a) => fmtd(statVal(a, s, per90), per90 || s.fpl ? 2 : 0) })),
+      sv: (a) => statVal(a, s, per90), f: (a) => fmtd(statVal(a, s, per90), decs(s, per90)) })),
   ];
   let h = `<h1>Squad</h1><p class="sub">${esc(scopeLabel())} · Arsenal appearances only</p>`;
   h += `<div class="row">${toggle("p90", [["0", "Totals"], ["1", "Per 90"]], per90 ? "1" : "0")}<label>Minimum minutes<select id="minmin">${[0, 90, 270, 450, 900, 1800].map((v) => `<option ${v === minMin ? "selected" : ""}>${v}</option>`).join("")}</select></label></div>`;
@@ -393,8 +397,9 @@ async function viewPlayer(id) {
   h += `<h2>Season by season (Arsenal only)</h2>` + table([
     { k: "season", l: "Season", left: 1, f: (r) => (r.total ? "<b>Since 2020-21</b>" : r.season), sv: (r) => (r.total ? "0000" : r.season) },
     { k: "comp", l: "Comp", left: 1, f: (r) => r.comp }, { k: "apps", l: "Apps" }, { k: "starts", l: "Starts" }, { k: "min", l: "Min" },
-    ...sc.map((s) => ({ k: s.k, l: s.l, sv: (r) => statVal(r, s, false), f: (r) => fmtd(statVal(r, s, false), s.fpl ? 2 : 0) })),
+    ...sc.map((s) => ({ k: s.k, l: s.l, sv: (r) => statVal(r, s, false), f: (r) => fmtd(statVal(r, s, false), decs(s, false)) })),
   ], srows, { sort: "season", hl: (r) => r.total });
+  h += `<p class="note">xG and xA cover Premier League seasons from 2022-23 only (season totals, counted only when the whole season was at Arsenal). Tackles, clearances/blocks/interceptions, recoveries and defensive contributions cover the current Premier League season only. Totals include only the seasons where each stat exists.</p>`;
 
   // percentiles vs league peers in the same position group
   const sc1 = singleScope();
@@ -472,7 +477,7 @@ async function viewCompare() {
     const pool = L.players.filter((r) => r.min >= 90);
     const key = (r) => `${r.id}|${r.tid}`;
     sel = sel.filter((k) => pool.some((r) => key(r) === k));
-    if (!sel.length) sel = pool.filter((r) => r.tid === ARSENAL).sort((x, y) => y.min - x.min).slice(0, 2).map(key);
+    if (!sel.length) sel = pool.filter((r) => r.tid === ARSENAL && r.grp !== "GK").sort((x, y) => ((y.g || 0) + (y.a || 0)) - ((x.g || 0) + (x.a || 0)) || y.min - x.min).slice(0, 2).map(key);
     const ents = sel.map((k, i) => { const r = pool.find((x) => key(x) === k); return { name: `${r.name} (${r.team})`, color: COLORS[i], row: r }; });
     const metrics = PCT_STATS.concat(["fc"]).map((k) => PSTATS.find((s) => s.k === k)).filter((s) => ents.some((e) => leagueVal(e.row, s.k) != null));
     ents.forEach((e) => { e.vals = {}; metrics.forEach((s) => { e.vals[s.k] = leagueVal(e.row, s.k); }); });

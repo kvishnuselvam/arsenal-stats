@@ -70,9 +70,9 @@ h2 { font-size: 17px; margin: 28px 0 10px; }
 .sub { color: var(--ink-2); margin: 0 0 16px; }
 .muted { color: var(--muted); }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 16px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
 .tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 12px 14px; }
-.tile .v { font-size: 26px; font-weight: 650; }
+.tile .v { font-size: 24px; font-weight: 650; white-space: nowrap; }
 .tile .l { font-size: 12px; color: var(--ink-2); }
 .tile .x { font-size: 12px; color: var(--muted); }
 .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin: 8px 0 12px; }
@@ -127,4 +127,6 @@ footer { text-align: center; font-size: 12px; color: var(--muted); padding: 20px
   .filters { padding: 10px 14px; }
   details.match summary { grid-template-columns: 70px 40px 1fr 60px; }
   details.match summary .hide-sm { display: none; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .tile .v { font-size: 20px; }
 }
