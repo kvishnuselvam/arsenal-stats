@@ -376,6 +376,26 @@ def main():
                 if row["id"] == aid and row.get("tid") == ARSENAL and row.get("fpl_past"):
                     ar["past_xg"][label] = {"xg": row.get("xg", 0), "xa": row.get("xa", 0), "min": row["min"]}
 
+    # shirt numbers and nationality from the latest season's squad list that includes the player
+    extras = load("espn/extras.json", {"rosters": {}, "teams": {}})
+    for aid, ar in arsenal.items():
+        for season in sorted(extras["rosters"], reverse=True):
+            info = extras["rosters"][season].get(aid)
+            if info:
+                ar["no"] = info.get("jersey")
+                ar["nat"] = info.get("nat")
+                ar["age"] = info.get("age") if int(season) == cur else None
+                break
+    seen = {}
+    for tl in league_teams.values():
+        for t in tl:
+            seen[t["id"]] = {"name": t["name"], "abbr": t["abbr"]}
+    meta["teams"] = {}
+    for tid, base in seen.items():
+        e = extras["teams"].get(tid, {})
+        meta["teams"][tid] = {"name": base["name"], "short": e.get("short") or base["name"],
+                              "abbr": e.get("abbr") or base["abbr"], "color": e.get("color"), "alt": e.get("alt")}
+
     arsenal_matches.sort(key=lambda m: m["date"])
     meta["last_match"] = arsenal_matches[-1]["date"] if arsenal_matches else None
     meta["fpl_last_gw"] = core.get("last_event") if core else None

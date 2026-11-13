@@ -149,13 +149,80 @@ def run(comp_code, season, arsenal_only=False):
     return changed or bool(todo)
 
 
+def _flatten(athletes):
+    out = []
+    for a in athletes or []:
+        if isinstance(a, dict) and "items" in a:
+            out.extend(a["items"])
+        else:
+            out.append(a)
+    return out
+
+
+def fetch_extras():
+    """Arsenal squad lists per season (shirt numbers, nationality, age) and club colours for badges.
+    Photos and logos in these responses are deliberately ignored."""
+    path = "espn/extras.json"
+    ex = load(path, {"rosters": {}, "teams": {}})
+    cur = current_season()
+    for season in range(COMPS["PL"]["first"], cur + 1):
+        if str(season) in ex["rosters"] and season != cur:
+            continue
+        j = get_json(f"{E}/eng.1/teams/{ARSENAL}/roster?season={season}")
+        if not j:
+            continue
+        ros = {}
+        for a in _flatten(j.get("athletes")):
+            if not a.get("id"):
+                continue
+            cit = a.get("citizenship") or (a.get("citizenshipCountry") or {}).get("name") or ""
+            ros[str(a["id"])] = {"jersey": a.get("jersey"), "nat": cit, "age": a.get("age"),
+                                 "pos": (a.get("position") or {}).get("displayName") or (a.get("position") or {}).get("name")}
+        if ros:
+            ex["rosters"][str(season)] = ros
+            if season == cur:
+                sample = next(iter(_flatten(j.get("athletes"))), {})
+                print("roster sample keys:", sorted(k for k in sample.keys() if k not in ("headshot", "flag", "links")))
+    for code, conf in COMPS.items():
+        j = get_json(f"{E}/{conf['slug']}/teams")
+        try:
+            teams = j["sports"][0]["leagues"][0]["teams"]
+        except (TypeError, KeyError, IndexError):
+            teams = []
+        for t in teams:
+            t = t.get("team", t)
+            ex["teams"][str(t["id"])] = _team_info(t)
+    # clubs that appear in stored seasons but not in the current lists
+    known = set(ex["teams"])
+    for code, conf in COMPS.items():
+        for season in range(conf["first"], cur + 1):
+            st = load(f"espn/{code}/{season}.json", {})
+            for tid in st.get("teams", []):
+                if tid not in known:
+                    j = get_json(f"{E}/{conf['slug']}/teams/{tid}")
+                    if j and j.get("team"):
+                        ex["teams"][tid] = _team_info(j["team"])
+                    known.add(tid)
+    save(path, ex)
+    print(f"extras: {len(ex['rosters'])} Arsenal squad lists, {len(ex['teams'])} club colours")
+
+
+def _team_info(t):
+    return {"name": t.get("displayName"), "short": t.get("shortDisplayName"), "abbr": t.get("abbreviation"),
+            "color": t.get("color"), "alt": t.get("alternateColor")}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--comp", choices=list(COMPS), action="append")
     ap.add_argument("--season", type=int, action="append", help="start year, e.g. 2020 for 2020-21")
     ap.add_argument("--current", action="store_true", help="only the current season")
     ap.add_argument("--arsenal-only", action="store_true")
+    ap.add_argument("--extras", action="store_true", help="only squad lists and club colours")
     a = ap.parse_args()
+    if a.extras:
+        fetch_extras()
+        return
     cur = current_season()
     for code in a.comp or list(COMPS):
         if a.current:

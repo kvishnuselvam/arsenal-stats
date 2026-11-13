@@ -11,7 +11,7 @@ on:
         description: "update = current season only; backfill = every season from 2020-21"
         default: update
         type: choice
-        options: [update, backfill, rebuild]
+        options: [update, backfill, rebuild, extras]
   push:
     branches: [main]
     paths: ["site/**", "scripts/build_site_data.py"]
@@ -54,9 +54,13 @@ jobs:
               done
             done
             python scripts/fetch_fpl.py --force
+            python scripts/fetch_espn.py --extras
           elif [ "$MODE" = "update" ]; then
             python scripts/fetch_espn.py --current
             python scripts/fetch_fpl.py
+            python scripts/fetch_espn.py --extras
+          elif [ "$MODE" = "extras" ]; then
+            python scripts/fetch_espn.py --extras
           fi
           python scripts/build_site_data.py
           # weekly heartbeat keeps the scheduled workflow active through the off-season
