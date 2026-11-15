@@ -1,8 +1,10 @@
 """Turn stored ESPN and FPL data into the small JSON files the website reads (site/data/)."""
+import csv
 import datetime as dt
 import glob
 import json
 import os
+import re
 from collections import Counter, defaultdict
 
 from common import DATA, ROOT, load, norm, season_label
@@ -24,6 +26,46 @@ FPL_MAP = {"expected_goals": "xg", "expected_assists": "xa", "tackles": "ptkl",
            "clearances_blocks_interceptions": "cbi", "recoveries": "rec", "defensive_contribution": "dc"}
 DEF_STATS = ["ptkl", "cbi", "rec", "dc"]
 GROUPS = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
+
+
+PHOTO_DIR = os.path.join(ROOT, "site", "img", "players")
+PHOTO_EXT = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def slug(name):
+    """bukayo-saka style key; must match slug() in site/app.js."""
+    return "-".join(norm((name or "").lower()).split())
+
+
+def build_photos():
+    """List uploaded player photos and their credits. A photo only goes live once it has a credit row."""
+    credits = {}
+    path = os.path.join(PHOTO_DIR, "credits.csv")
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+                key = slug(os.path.splitext(row.get("file", ""))[0])
+                src = row.get("source", "")
+                if key and row.get("photographer") and row.get("licence"):
+                    credits[key] = {"by": row["photographer"], "lic": row["licence"],
+                                    "src": src if src.startswith(("https://", "http://")) else ""}
+    live, waiting, big = {}, [], []
+    if os.path.isdir(PHOTO_DIR):
+        for fn in sorted(os.listdir(PHOTO_DIR)):
+            stem, ext = os.path.splitext(fn)
+            if ext.lower() not in PHOTO_EXT:
+                continue
+            key = slug(stem)
+            kb = os.path.getsize(os.path.join(PHOTO_DIR, fn)) // 1024
+            if kb > 600:
+                big.append(fn)
+            if key in credits:
+                live[key] = dict(credits[key], file=fn, kb=kb)
+            else:
+                waiting.append(fn)
+    write("photos.json", {"live": live, "waiting": waiting, "big": big})
+    print(f"photos: {len(live)} live, {len(waiting)} waiting for a credit row, {len(big)} over 600 KB")
 
 
 def write(name, obj):
@@ -401,6 +443,7 @@ def main():
     meta["fpl_last_gw"] = core.get("last_event") if core else None
     meta["fpl_mapped_players"] = len(fpl_aid)
     write("meta.json", meta)
+    build_photos()
     write("arsenal_matches.json", arsenal_matches)
     write("arsenal_players.json", sorted(arsenal.values(), key=lambda a: -sum(r["min"] for r in a["matches"])))
     print("built:", len(arsenal_matches), "Arsenal matches,", len(arsenal), "Arsenal players,",

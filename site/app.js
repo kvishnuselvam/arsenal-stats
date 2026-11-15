@@ -95,10 +95,16 @@ function badge(tid, name, size = "") {
   const t = teamInfo(tid, name);
   return `<span class="badge ${size}" style="--c:${t.c};--c2:${t.c2}" title="${esc(t.name)}">${esc(t.abbr)}</span>`;
 }
+// same rule as slug() in scripts/build_site_data.py
+const slug = (n) => String(n || "").toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/ø/g, "o").replace(/ł/g, "l").replace(/ß/g, "ss").replace(/æ/g, "ae").replace(/[^a-z]+/g, " ").trim().split(/\s+/).filter(Boolean).join("-");
+const photoOf = (name) => ((S.photos || {}).live || {})[slug(name)] || null;
+const creditText = (ph) => `Photo: ${ph.by} · ${ph.lic}`;
 function kit(p, size = "") {
   const tid = p.tid || ARSENAL;
   const c = tid === ARSENAL ? "var(--neon)" : teamInfo(tid, p.team).c;
   const glow = tid === ARSENAL ? "var(--neon)" : `color-mix(in srgb, ${c}, #fff 35%)`;
+  const ph = photoOf(p.name);
+  if (ph) return `<div class="kit photo ${size}" style="--c:${glow}" title="${esc(creditText(ph))}"><img src="img/players/${encodeURIComponent(ph.file)}" alt="${esc(p.name)}" loading="lazy" decoding="async"></div>`;
   const label = p.no ? `<text class="no" x="50" y="66">${esc(p.no)}</text>` : `<text class="ini" x="50" y="63">${esc(initials(p.name).toUpperCase())}</text>`;
   return `<div class="kit ${size}" style="--c:${glow}"><svg viewBox="0 0 100 100" aria-hidden="true">
     <path class="shirt" fill="url(#kitfill)" d="M34 8 L43 5 Q50 14 57 5 L66 8 L91 22 L83 41 L73 36 L73 93 L27 93 L27 36 L17 41 L9 22 Z"/>
@@ -562,6 +568,7 @@ async function viewPlayer(id) {
   let h = `<section class="hero">${p.no ? `<div class="no-big">${esc(p.no)}</div>` : ""}<div class="phero">${kit({ ...p, tid: ARSENAL }, "lg")}<div>
     <div class="kicker"><a href="#/players" style="text-decoration:none">◂ Players</a> // ${esc(posName)}</div><h1 style="font-size:clamp(38px,6vw,76px)">${esc(p.name)}</h1>
     <div class="chips">${p.no ? `<span class="chip">No. ${esc(p.no)}</span>` : ""}${p.nat ? `<span class="chip">${esc(p.nat)}</span>` : ""}${p.age ? `<span class="chip">Age ${esc(p.age)}</span>` : ""}<span class="chip">${all.apps} apps since ${first ? new Date(first.date).getFullYear() : 2020}</span><button class="chip" id="cmp-me" style="cursor:pointer;color:#fff;background:var(--neon);border-color:var(--neon)">◇ Compare</button></div>
+    ${(() => { const ph = photoOf(p.name); return ph ? `<p class="credit">${esc(creditText(ph))}${ph.src ? ` · <a href="${esc(ph.src)}" target="_blank" rel="noopener">source</a>` : ""}</p>` : ""; })()}
   </div></div></section>`;
   h += `<p class="note" style="margin-top:-10px">Selection: ${esc(scopeLabel())}</p>`;
   const t = [[a.apps, "Appearances", `${a.starts} starts`], [a.min, "Minutes", ""], [a.g || 0, "Goals", a.min ? `${((90 * (a.g || 0)) / a.min).toFixed(2)} per 90` : "", 1],
@@ -661,6 +668,39 @@ function viewMatches() {
   paint(h);
 }
 
+
+// ---------- PHOTO CHECKLIST ----------
+async function viewPhotos() {
+  const cur = seasonsFor("PL")[0];
+  const L = await league("PL", cur);
+  const ph = S.photos || { live: {}, waiting: [], big: [] };
+  const waiting = new Set((ph.waiting || []).map((f) => slug(f.replace(/\.[^.]+$/, ""))));
+  const pool = store.get("phPool") || "ars", only = store.get("phOnly") === "1";
+  const seen = new Set();
+  let rows = (L ? L.players : []).filter((r) => { const k = slug(r.name); if (!k || seen.has(k)) return false; seen.add(k); return true; })
+    .map((r) => { const k = slug(r.name); return { name: r.name, team: r.team, tid: r.tid, min: r.min, key: k, st: ph.live[k] ? 2 : waiting.has(k) ? 1 : 0 }; });
+  const all = rows.length, live = rows.filter((r) => r.st === 2).length, wait = rows.filter((r) => r.st === 1).length;
+  if (pool === "ars") rows = rows.filter((r) => r.tid === ARSENAL);
+  if (only) rows = rows.filter((r) => r.st !== 2);
+  const label = ["Missing", "Needs credit row", "Live"];
+  let h = `<section class="hero"><div class="kicker">Setup // Player photos</div><h1>Photos</h1><p class="sub">Which players have a photo, and the exact file name each one needs · Premier League ${esc(cur)}</p></section>`;
+  h += tiles([[live, "Photos live", `of ${all} players`, 1], [wait, "Waiting for credit", "uploaded, no credit row yet"], [all - live - wait, "Missing", "showing shirt cards"]]);
+  if ((ph.big || []).length) h += `<p class="note">Over 600 KB, consider a smaller version: ${ph.big.map(esc).join(", ")}</p>`;
+  h += `<div class="ctl" style="margin-top:18px">${toggle("phpool", [["ars", "Arsenal"], ["lg", "Whole league"]], pool)}${toggle("phonly", [["0", "All"], ["1", "Not live yet"]], only ? "1" : "0")}</div>`;
+  h += table([
+    { k: "name", l: "Player", left: 1, f: (r) => esc(r.name) },
+    { k: "team", l: "Club", left: 1, f: (r) => `<span class="tm">${badge(r.tid, r.team, "sm")}${esc(teamInfo(r.tid, r.team).short)}</span>` },
+    { k: "min", l: "Min" },
+    { k: "key", l: "File name", left: 1, f: (r) => `<code>${esc(r.key)}.jpg</code>` },
+    { k: "st", l: "Status", left: 1, f: (r) => `<span class="st st${r.st}">${label[r.st]}</span>` },
+    { k: "find", l: "Find", left: 1, sv: (r) => r.name, f: (r) => `<a href="https://commons.wikimedia.org/w/index.php?title=Special:MediaSearch&type=image&search=${encodeURIComponent(r.name + " footballer")}" target="_blank" rel="noopener">Search Commons ↗</a>` },
+  ], rows, { sort: "min" });
+  h += `<p class="note">Upload photos to <code>site/img/players</code> in the GitHub repo and add one row per photo to <code>credits.csv</code> in the same folder. A photo goes live a few minutes after both are in place.</p>`;
+  paint(h);
+  onToggle("phpool", (v) => { store.set("phPool", v); S.quiet = true; viewPhotos(); });
+  onToggle("phonly", (v) => { store.set("phOnly", v); S.quiet = true; viewPhotos(); });
+}
+
 // ---------- ABOUT ----------
 function viewAbout() {
   const m = S.meta;
@@ -671,7 +711,9 @@ function viewAbout() {
   <li>ESPN public match data: results, team stats (shots, possession, passing, crosses, tackles, interceptions, clearances, corners, fouls), player stats (minutes, goals, assists, shots, shots on target, fouls, cards, saves), shirt numbers and club colours. Minutes come from substitution times and ignore stoppage time.</li>
   <li>Official Fantasy Premier League API: xG, xA, tackles, clearances/blocks/interceptions, recoveries and defensive contributions, Premier League only. Per match for the current season; xG and xA season totals from 2022-23 for players still in the league. Team xG is the sum of its players' xG.</li></ul>
   <p><b>Not available from free sources:</b> big chances, duels, dribbles, aerial duels, Champions League xG, and Premier League xG before 2022-23.</p>
-  <p><b>Design:</b> club badges are simple shapes in each club's colours with its short name, and player cards show shirt numbers; no club crests or player photos are used.</p></div>`);
+  <p><b>Design:</b> club badges are simple shapes in each club's colours with its short name. Player cards show a photo where one has been added with its credit, and a shirt card otherwise. No club crests are used.</p>
+  <p><a class="btn" style="display:inline-block;text-decoration:none" href="#/photos">Photo checklist</a></p></div>
+  ${(() => { const live = Object.entries((S.photos || {}).live || {}); if (!live.length) return ""; return sec("01", "Photo credits") + `<div class="hud pad"><p class="note" style="margin-top:0">Photos are used under the licences shown. Each links to its source page.</p><ul class="credits">${live.sort((a, b) => a[0].localeCompare(b[0])).map(([k, ph]) => `<li><b>${esc(k.replace(/-/g, " "))}</b> · ${esc(ph.by)} · ${esc(ph.lic)}${ph.src ? ` · <a href="${esc(ph.src)}" target="_blank" rel="noopener">source</a>` : ""}</li>`).join("")}</ul></div>`; })()}`);
 }
 
 // ---------- routing and filters ----------
@@ -685,14 +727,15 @@ async function route() {
   let [, view, arg] = (location.hash || "#/team").split("/");
   if (view === "compare") { location.hash = "#/players"; return; }
   view = view || "team";
-  document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === view || (view === "player" && a.dataset.nav === "players")));
-  $("#filters").style.display = view === "about" ? "none" : "";
+  document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.dataset.nav === view || (view === "player" && a.dataset.nav === "players") || (view === "photos" && a.dataset.nav === "about")));
+  $("#filters").style.display = view === "about" || view === "photos" ? "none" : "";
   tip.hidden = true;
   try {
     if (view === "players") await viewPlayers();
     else if (view === "player") await viewPlayer(decodeURIComponent(arg || ""));
     else if (view === "matches") viewMatches();
     else if (view === "about") viewAbout();
+    else if (view === "photos") await viewPhotos();
     else await viewTeam();
   } catch (e) {
     console.error(e);
@@ -709,6 +752,7 @@ async function init() {
     return;
   }
   MATCH_BY_ID = Object.fromEntries(S.matches.map((m) => [m.id, m]));
+  try { S.photos = await getJSON("data/photos.json"); } catch (e) { S.photos = { live: {}, waiting: [], big: [] }; }
   S.comp = store.get("comp") || "PL";
   if (!seasonsFor(S.comp).length) S.comp = "PL";
   S.season = store.get("season") || seasonsFor(S.comp)[0];

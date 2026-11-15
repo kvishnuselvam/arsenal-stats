@@ -28,5 +28,6 @@ Not available from free sources: big chances, duels, dribbles, aerial duels, Cha
 - `scripts/fetch_fpl.py`: FPL data, stored in `data/fpl/`
 - `scripts/build_site_data.py`: builds the JSON files in `site/data/`
 - `site/`: the static website (no build step)
+- `site/img/players/`: player photos you upload, plus `credits.csv`; see the README in that folder
 
 Personal, non-commercial project.
